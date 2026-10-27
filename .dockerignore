@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+.venv
+.local
+__pycache__
+.pytest_cache
+.coverage
+tests

@@ -10,6 +10,9 @@ from flask import current_app
 
 def get_connection():
     config = current_app.config
+    if config.get('DATABASE_ENGINE', 'mysql') == 'sqlite':
+        from . import sqlite_storage
+        return sqlite_storage.get_connection()
     return mysql.connector.connect(
         host=config['MYSQL_HOST'], port=config['MYSQL_PORT'],
         database=config['MYSQL_DATABASE'], user=config['MYSQL_USER'],
@@ -19,6 +22,9 @@ def get_connection():
 
 
 def init_db():
+    if current_app.config.get('DATABASE_ENGINE', 'mysql') == 'sqlite':
+        from . import sqlite_storage
+        return sqlite_storage.init_db()
     connection = get_connection()
     try:
         cursor = connection.cursor()
@@ -32,6 +38,9 @@ def init_db():
 
 
 def database_ready():
+    if current_app.config.get('DATABASE_ENGINE', 'mysql') == 'sqlite':
+        from . import sqlite_storage
+        return sqlite_storage.database_ready()
     try:
         connection = get_connection()
         try:
@@ -78,6 +87,9 @@ def _integer(value, default=None):
 
 
 def persist_webhook(payload, page_id):
+    if current_app.config.get('DATABASE_ENGINE', 'mysql') == 'sqlite':
+        from . import sqlite_storage
+        return sqlite_storage.persist_webhook(payload, page_id)
     events = prepare_events(payload, page_id)
     connection = get_connection()
     result = {'stored_events': 0, 'duplicate_events': 0}

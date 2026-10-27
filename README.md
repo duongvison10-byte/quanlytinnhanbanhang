@@ -1,14 +1,38 @@
 # Quản lý tin nhắn bán hàng
 
-Backend Flask cho một fanpage Facebook: xác minh webhook, nhận sự kiện tin nhắn/bình luận, lưu MySQL và chống ghi trùng. Chưa có giao diện hộp thư, quản lý đơn hàng hoặc AI.
+Backend Flask cho một fanpage Facebook: xác minh webhook, nhận sự kiện tin nhắn/bình luận, lưu SQLite hoặc MySQL và chống ghi trùng. Chưa có giao diện hộp thư, quản lý đơn hàng hoặc AI.
+
+## Chạy thử nhanh không cần Docker
+
+Trong terminal Codespace của kho này, chạy một lệnh:
+
+```sh
+git pull --ff-only && ./scripts/quickstart.sh
+```
+
+Lệnh cài phụ thuộc, chỉ hỏi App Secret qua lời nhắc ẩn nếu chưa có, rồi khởi động lại SQLite và đăng ký callback ứng dụng với Meta. Giữ cổng **8000 → Port Visibility → Public** trong tab **Ports**. Helper lấy tên máy từ `CODESPACE_NAME`, không cần sao chép URL hoặc mã xác minh. Nó không yêu cầu Page Access Token, không tự gửi tin, và chỉ báo đăng ký thành công khi Meta chấp nhận. Đăng ký các sự kiện của fanpage vẫn là bước riêng sau đó.
+
+Chế độ SQLite chạy trực tiếp bằng Python 3.12+, phù hợp để thử một máy chủ nhận tin nhắn và bình luận. Dùng cách này nếu Codespace chưa có Docker hoặc đang cần khôi phục cấu hình container:
+
+```sh
+./scripts/setup.sh
+./scripts/start.sh --sqlite
+./scripts/start.sh status
+```
+
+Lựa chọn SQLite được lưu trong `.local/storage-engine`; các lần chạy `start.sh`, `start.sh status` và `start.sh stop` tiếp theo giữ chế độ này. Dữ liệu nằm trong `.local/webhooks.sqlite3` và không được đưa lên GitHub. `SQLITE_PATH` có thể chỉ định một file khác. Chuyển giữa hai chế độ sẽ khởi động lại Flask do script quản lý; script không dừng MySQL khi chạy ở chế độ SQLite. Đây là bản thử trên một máy, không tự chuyển dữ liệu giữa SQLite và MySQL. Muốn quay lại MySQL, dùng `./scripts/start.sh --mysql` khi Docker Compose đã sẵn sàng.
+
+Để nhận webhook thật, vẫn cần App Secret đúng, URL HTTPS công khai và mã xác minh khớp với Meta. Có thể nhập App Secret qua lời nhắc ẩn bằng `python3 scripts/generate-local-env.py --set-app-secret`, rồi chạy `./scripts/start.sh stop` và `./scripts/start.sh`. **Nhận sự kiện không cần Page Access Token**; token chỉ cần cho các thao tác gọi Meta như đăng ký qua script hoặc gửi trả lời. Không chuyển token sang Codespaces chỉ để nhận tin.
+
+Nếu muốn dùng Docker feature đã khai báo, mở **Ctrl+Shift+P → Codespaces: Rebuild Container → Rebuild**. Nếu rebuild thất bại, xem lỗi đầu tiên trong `creation.log`; không cài thêm Docker thủ công vào container khôi phục.
 
 ## Bản thử bằng GitHub Codespaces
 
 Đã chuẩn bị `.devcontainer/devcontainer.json` cho Python 3.12 và Docker. Cấu hình này chưa được chạy trong một Codespace thật. Khi dùng Codespaces, kiểm tra hạn mức miễn phí trong tài khoản GitHub trước khi tạo máy; thời gian và dung lượng vượt hạn mức có thể bị tính phí.
 
-Các bí mật của môi trường Codex không tự chuyển sang Codespaces. Đặt `META_APP_SECRET` và `META_PAGE_ACCESS_TOKEN` qua cài đặt Codespaces secrets của tài khoản GitHub, cho phép kho này sử dụng, rồi khởi động lại Codespace. Không ghi giá trị vào mã nguồn. `META_PAGE_ID` đã có giá trị mặc định cho fanpage; mã xác minh và mật khẩu MySQL được tạo riêng trong `.env` bị Git bỏ qua.
+Các bí mật của môi trường Codex không tự chuyển sang Codespaces. Đặt `META_APP_SECRET` qua cài đặt Codespaces secrets của tài khoản GitHub hoặc lời nhắc ẩn ở trên. Chỉ thêm `META_PAGE_ACCESS_TOKEN` nếu cần gọi Meta từ Codespace. Với Codespaces secrets, cho phép kho này sử dụng rồi khởi động lại Codespace. Không ghi giá trị vào mã nguồn. `META_PAGE_ID` đã có giá trị mặc định cho fanpage; mã xác minh và mật khẩu MySQL được tạo riêng trong `.env` bị Git bỏ qua.
 
-Nên đặt hai Codespaces secrets trước khi tạo máy để tránh phải khởi động lại. Sau khi mã đã được đưa lên GitHub, mở **Code → Codespaces → Create codespace on main**. Setup và khởi động backend sẽ chạy tự động. Trong tab **Ports**, bấm chuột phải cổng **8000 → Port Visibility → Public**, rồi lấy địa chỉ HTTPS được GitHub cấp và thêm `/webhook`. Tổ chức có thể giới hạn quyền mở cổng Public.
+Nên đặt Codespaces secrets cần dùng trước khi tạo máy để tránh phải khởi động lại. Sau khi mã đã được đưa lên GitHub, mở **Code → Codespaces → Create codespace on main**. Setup và khởi động backend sẽ chạy tự động ở chế độ đã lưu, mặc định MySQL với máy mới. Có thể chuyển sang SQLite bằng lệnh ở trên. Trong tab **Ports**, bấm chuột phải cổng **8000 → Port Visibility → Public**, rồi lấy địa chỉ HTTPS được GitHub cấp và thêm `/webhook`. Tổ chức có thể giới hạn quyền mở cổng Public.
 
 Lưu URL HTTPS đầy đủ kết thúc bằng `/webhook` vào `.local/public-webhook-url`, rồi chạy `.venv/bin/python scripts/connect-meta-webhook.py`. Lệnh này kiểm tra readiness và xác minh công khai trước khi đăng ký callback với Meta; nó giữ nguyên callback khác đã tồn tại. `.venv/bin/python scripts/connect-meta-webhook.py --status` chỉ đọc trạng thái.
 
@@ -16,7 +40,7 @@ Các đường tunnel trực tiếp trong môi trường Codex hiện tại đã
 
 ## Chạy trong môi trường phát triển
 
-Cần Python 3.12+, Docker và Docker Compose. Mỗi tác vụ cloud đã có môi trường riêng; dùng checkout hiện có, không cần tạo Git worktree.
+Cần Python 3.12+; chế độ MySQL cần thêm Docker và Docker Compose. Mỗi tác vụ cloud đã có môi trường riêng; dùng checkout hiện có, không cần tạo Git worktree.
 
 ```sh
 ./scripts/setup.sh
@@ -26,7 +50,7 @@ Cần Python 3.12+, Docker và Docker Compose. Mỗi tác vụ cloud đã có m�
 
 Setup tạo `.env` riêng tư với quyền đọc/ghi chỉ cho chủ file. Mật khẩu MySQL và mã xác minh webhook được tạo tự động, giữ nguyên khi chạy lại. `META_PAGE_ACCESS_TOKEN` đã được nền tảng cung cấp qua biến môi trường sẽ được dùng trực tiếp, không sao chép vào file.
 
-MySQL chỉ mở cổng nội bộ 3307; Flask chỉ lắng nghe cổng nội bộ 8000. Dữ liệu MySQL nằm tại `MYSQL_DATA_DIR` trong `.env` (mặc định `.local/mysql`). Tất cả cấu hình bí mật, dữ liệu và log cục bộ đã được Git bỏ qua. Khi đổi mật khẩu của một MySQL đã khởi tạo, cần đổi cả tài khoản trong MySQL; thay `.env` riêng lẻ không đổi mật khẩu trong dữ liệu cũ.
+Ở chế độ MySQL, MySQL chỉ mở cổng nội bộ 3307; Flask chỉ lắng nghe cổng nội bộ 8000 trong cả hai chế độ. Dữ liệu MySQL nằm tại `MYSQL_DATA_DIR` trong `.env` (mặc định `.local/mysql`). Tất cả cấu hình bí mật, dữ liệu và log cục bộ đã được Git bỏ qua. Khi đổi mật khẩu của một MySQL đã khởi tạo, cần đổi cả tài khoản trong MySQL; thay `.env` riêng lẻ không đổi mật khẩu trong dữ liệu cũ.
 
 ```sh
 ./scripts/start.sh stop

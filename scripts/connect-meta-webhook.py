@@ -19,6 +19,7 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--status', action='store_true', help='Read existing subscriptions only')
+    parser.add_argument('--app-only', action='store_true', help='Configure or inspect the app callback without a Page access token')
     arguments = parser.parse_args()
     local = dotenv_values(ROOT / '.env')
 
@@ -30,7 +31,9 @@ def main():
     app_secret = setting('META_APP_SECRET')
     page_token = setting('META_PAGE_ACCESS_TOKEN')
     verify_token = setting('META_VERIFY_TOKEN')
-    if not all((app_secret, page_token, verify_token)) or not app_id.isdigit() or not page_id.isdigit():
+    if (not app_secret or not app_id.isdigit()
+            or (not arguments.app_only and (not page_token or not page_id.isdigit()))
+            or (not arguments.status and not verify_token)):
         raise SystemExit('Required Meta configuration is missing; no secret values displayed.')
     app_token = app_id + '|' + app_secret
 
@@ -56,9 +59,12 @@ def main():
     subscriptions = graph(app_id + '/subscriptions', app_token).get('data', [])
     existing = next((item for item in subscriptions if item.get('object') == 'page'), None)
     if arguments.status:
-        page_apps = graph(page_id + '/subscribed_apps?fields=id,subscribed_fields', page_token).get('data', [])
-        selected = next((item for item in page_apps if str(item.get('id')) == app_id), {})
-        print(json.dumps({'app_page_webhook_active': bool(existing and existing.get('active')), 'callback_url': existing.get('callback_url') if existing else None, 'page_subscribed_fields': selected.get('subscribed_fields', [])}))
+        status = {'app_page_webhook_active': bool(existing and existing.get('active')), 'callback_url': existing.get('callback_url') if existing else None}
+        if not arguments.app_only:
+            page_apps = graph(page_id + '/subscribed_apps?fields=id,subscribed_fields', page_token).get('data', [])
+            selected = next((item for item in page_apps if str(item.get('id')) == app_id), {})
+            status['page_subscribed_fields'] = selected.get('subscribed_fields', [])
+        print(json.dumps(status))
         return
 
     callback_path = ROOT / '.local' / 'public-webhook-url'
@@ -100,6 +106,9 @@ def main():
     if not result.get('success'):
         raise SystemExit('Meta did not confirm app webhook registration.')
     record.write_text(callback + '\n')
+    if arguments.app_only:
+        print('Meta verified the public app callback.')
+        return
     result = graph(page_id + '/subscribed_apps', page_token, {'subscribed_fields': fields}, method='POST')
     if not result.get('success'):
         raise SystemExit('App callback was registered, but Meta did not confirm Page event subscription.')

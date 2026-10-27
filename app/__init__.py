@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import os
 import re
+import sqlite3
 from pathlib import Path
 
 import click
@@ -63,9 +64,13 @@ def create_app(test_config=None):
         MYSQL_DATABASE=os.getenv('MYSQL_DATABASE', 'quanlytinnhanbanhang'),
         MYSQL_USER=os.getenv('MYSQL_USER', 'app'),
         MYSQL_PASSWORD=os.getenv('MYSQL_PASSWORD', ''),
+        DATABASE_ENGINE=os.getenv('DATABASE_ENGINE', 'mysql'),
+        SQLITE_PATH=os.getenv('SQLITE_PATH', str(Path(__file__).resolve().parent.parent / '.local' / 'webhooks.sqlite3')),
     )
     if test_config:
         app.config.update(test_config)
+    if app.config['DATABASE_ENGINE'] not in ('mysql', 'sqlite'):
+        raise ValueError('DATABASE_ENGINE must be mysql or sqlite')
 
     @app.get('/healthz')
     def health():
@@ -126,7 +131,7 @@ def create_app(test_config=None):
                     return jsonify(error='invalid_event_fields'), 400
         try:
             result = storage.persist_webhook(payload, app.config['META_PAGE_ID'])
-        except mysql.connector.Error:
+        except (mysql.connector.Error, sqlite3.Error):
             app.logger.error('Webhook database write failed')
             return jsonify(error='storage_unavailable'), 503
         return jsonify(status='received', **result)

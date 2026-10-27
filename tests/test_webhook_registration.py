@@ -183,3 +183,80 @@ def test_status_uses_only_graph_get_and_does_not_need_tunnel_file(
         "page_subscribed_fields": FIELDS.split(","),
     }
     assert not (registration.ROOT / ".local" / "meta-connected-url").exists()
+
+
+def test_app_only_registers_callback_without_page_token_or_page_requests(
+    registration, network, monkeypatch, capsys
+):
+    monkeypatch.delenv('META_PAGE_ACCESS_TOKEN')
+    monkeypatch.setattr(sys, 'argv', ['connect-meta-webhook.py', '--app-only'])
+    calls = network()
+    registration.main()
+    assert [call['method'] for call in calls] == ['GET', 'GET', 'GET', 'POST']
+    app_call = calls[-1]
+    assert app_call['url'].endswith('/' + APP_ID + '/subscriptions')
+    assert app_call['parameters']['callback_url'] == [CALLBACK]
+    assert app_call['parameters']['verify_token'] == ['fake-verify-token']
+    assert app_call['parameters']['fields'] == [FIELDS]
+    assert app_call['authorization'] == 'Bearer ' + APP_ID + '|fake-app-secret'
+    assert all('/subscribed_apps' not in call['url'] for call in calls)
+    record = registration.ROOT / '.local' / 'meta-connected-url'
+    assert record.read_text() == CALLBACK + '\n'
+    assert record.stat().st_mode & 0o777 == 0o600
+    output = capsys.readouterr().out
+    assert output.strip() == 'Meta verified the public app callback.'
+    for secret in ('fake-app-secret', 'fake-verify-token'):
+        assert secret not in output
+
+
+def test_app_only_status_needs_only_app_credentials_and_never_reads_page(
+    registration, network, monkeypatch, capsys
+):
+    monkeypatch.delenv('META_PAGE_ACCESS_TOKEN')
+    monkeypatch.delenv('META_VERIFY_TOKEN')
+    monkeypatch.setenv('META_PAGE_ID', 'unused-by-app-only')
+    monkeypatch.setattr(sys, 'argv', ['connect-meta-webhook.py', '--status', '--app-only'])
+    (registration.ROOT / '.local' / 'public-webhook-url').unlink()
+    calls = network(existing={'object': 'page', 'callback_url': CALLBACK, 'active': True})
+    registration.main()
+    assert len(calls) == 1
+    assert calls[0]['method'] == 'GET'
+    assert calls[0]['url'].endswith('/' + APP_ID + '/subscriptions')
+    assert json.loads(capsys.readouterr().out) == {
+        'app_page_webhook_active': True, 'callback_url': CALLBACK,
+    }
+    assert not (registration.ROOT / '.local' / 'meta-connected-url').exists()
+
+
+@pytest.mark.parametrize('failure', ['existing_callback', 'not_ready', 'wrong_challenge', 'invalid_url'])
+def test_app_only_preserves_existing_guards_without_page_token(
+    registration, network, monkeypatch, failure
+):
+    monkeypatch.delenv('META_PAGE_ACCESS_TOKEN')
+    monkeypatch.setattr(sys, 'argv', ['connect-meta-webhook.py', '--app-only'])
+    options = {}
+    expected = 'readiness/verification failed'
+    if failure == 'existing_callback':
+        options['existing'] = {'object': 'page', 'callback_url': 'https://existing.example/webhook', 'active': True}
+        expected = 'different app callback'
+    elif failure == 'not_ready':
+        options['ready_status'] = 503
+    elif failure == 'wrong_challenge':
+        options['valid_challenge'] = False
+    elif failure == 'invalid_url':
+        (registration.ROOT / '.local' / 'public-webhook-url').write_text('https://other.example/webhook')
+        expected = 'Callback must be'
+    calls = network(**options)
+    with pytest.raises(SystemExit, match=expected):
+        registration.main()
+    assert calls
+    assert all(call['method'] == 'GET' for call in calls)
+    assert not (registration.ROOT / '.local' / 'meta-connected-url').exists()
+
+
+def test_full_registration_still_requires_page_token(registration, network, monkeypatch):
+    monkeypatch.delenv('META_PAGE_ACCESS_TOKEN')
+    calls = network()
+    with pytest.raises(SystemExit, match='Required Meta configuration is missing'):
+        registration.main()
+    assert calls == []
